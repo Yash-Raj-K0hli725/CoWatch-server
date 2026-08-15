@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/labstack/echo/v4"
@@ -28,17 +27,16 @@ func (s *Server) Init() error {
 
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
-	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins:     []string{"https://*", "http://*"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
-		AllowHeaders:     []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		AllowCredentials: true,
-		MaxAge:           300,
-	}))
+	//e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+	//	AllowOrigins:     []string{"https://*", "http://*"},
+	//	AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
+	//	AllowHeaders:     []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+	//	AllowCredentials: true,
+	//	MaxAge:           300,
+	//}))
 
 	/*----echo-config----*/
 	e.Server.Handler = s.RegisterRoutes()
-	e.Server.IdleTimeout = time.Minute
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
 		response := errz.FormatError(err)
 		if !c.Response().Committed {

@@ -1,7 +1,6 @@
 package errz
 
 import (
-	"StreamRoom/internal/views"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,6 +8,11 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/gommon/log"
 )
+
+type Errz struct {
+	Message string `json:"message"`
+	Code    int    `json:"code,omitempty"`
+}
 
 type BadRequest struct {
 	Message string `json:"message"`
@@ -50,13 +54,25 @@ type AlreadyExists struct {
 func NewAlreadyExists(msg string) *AlreadyExists { return &AlreadyExists{msg, http.StatusConflict} }
 func (e *AlreadyExists) Error() string           { return e.Message }
 
-func HandleExceptions(err error) error {
+type NotAllowed struct {
+	Message string `json:"message"`
+	Code    int    `json:"code"`
+}
+
+func NewNotAllowed(msg string) *NotAllowed { return &NotAllowed{msg, http.StatusMethodNotAllowed} }
+func (e NotAllowed) Error() string         { return e.Message }
+
+func ErrzHandler(err error) error {
 	var duplicate *AlreadyExists
 	var notFound *NotFound
 	var unauthorized *Unauthorized
 	var badRequest *BadRequest
 	var forbidden *Forbiddenn
+	var notAllowed *NotAllowed
 	switch {
+	case errors.As(err, &badRequest):
+		return echo.NewHTTPError(http.StatusBadRequest, err)
+
 	case errors.As(err, &forbidden):
 		return echo.NewHTTPError(http.StatusForbidden, err)
 
@@ -69,8 +85,8 @@ func HandleExceptions(err error) error {
 	case errors.As(err, &unauthorized):
 		return echo.NewHTTPError(http.StatusUnauthorized, err)
 
-	case errors.As(err, &badRequest):
-		return echo.NewHTTPError(http.StatusBadRequest, err)
+	case errors.As(err, &notAllowed):
+		return echo.NewHTTPError(http.StatusMethodNotAllowed, err)
 
 	default:
 		log.Errorf("something went wrong :: %+v", err)
@@ -78,61 +94,42 @@ func HandleExceptions(err error) error {
 	}
 }
 
-func FormatError(err error) views.Response {
+func FormatError(err error) Errz {
 	var duplicate *AlreadyExists
 	var notFound *NotFound
 	var unauthorized *Unauthorized
 	var badRequest *BadRequest
 	var forbidden *Forbiddenn
+	var notAllowed *NotAllowed
+
 	switch {
 	case errors.As(err, &forbidden):
-		return views.Response{Code: http.StatusForbidden, Message: err.Error()}
-
+		return Errz{
+			Code: http.StatusForbidden, Message: err.Error(),
+		}
 	case errors.As(err, &duplicate):
-		return views.Response{Code: http.StatusConflict, Message: err.Error()}
+		return Errz{Code: http.StatusConflict, Message: err.Error()}
 
 	case errors.As(err, &notFound):
-		return views.Response{Code: http.StatusNotFound, Message: err.Error()}
+		return Errz{Code: http.StatusNotFound, Message: err.Error()}
 
 	case errors.As(err, &unauthorized):
-		return views.Response{Code: http.StatusUnauthorized, Message: err.Error()}
+		return Errz{Code: http.StatusUnauthorized, Message: err.Error()}
 
 	case errors.As(err, &badRequest):
-		return views.Response{Code: http.StatusBadRequest, Message: err.Error()}
+		return Errz{Code: http.StatusBadRequest, Message: err.Error()}
 
-	default:
-		log.Errorf("something went wrong :: %+v", err)
-		return views.Response{Code: http.StatusInternalServerError, Message: err.Error()}
-	}
-}
-
-func HandleErrx(ctx echo.Context, err error) error {
-	if err == nil {
-		return ctx.JSON(http.StatusOK, nil)
-	}
-	var existsErr *AlreadyExists
-	var notFoundErr *NotFound
-	var authErr *Unauthorized
-	var badReqErr *BadRequest
-	var notAllowed *Forbiddenn
-	switch {
 	case errors.As(err, &notAllowed):
-		return ctx.JSON(http.StatusForbidden, err)
-
-	case errors.As(err, &existsErr):
-		return ctx.JSON(http.StatusConflict, err)
-
-	case errors.As(err, &notFoundErr):
-		return ctx.JSON(http.StatusNotFound, err)
-
-	case errors.As(err, &authErr):
-		return ctx.JSON(http.StatusUnauthorized, err)
-
-	case errors.As(err, &badReqErr):
-		return ctx.JSON(http.StatusBadRequest, err)
+		return Errz{Code: http.StatusMethodNotAllowed, Message: err.Error()}
 
 	default:
+		if httpError, ok := errors.AsType[*echo.HTTPError](err); ok {
+			return Errz{
+				Code:    httpError.Code,
+				Message: fmt.Sprint(httpError.Message),
+			}
+		}
 		log.Errorf("something went wrong :: %+v", err)
-		return ctx.JSON(http.StatusInternalServerError, map[string]interface{}{"message": fmt.Sprintf("something went wrong :: %v", err), "code": http.StatusInternalServerError})
+		return Errz{Code: http.StatusInternalServerError, Message: err.Error()}
 	}
 }
