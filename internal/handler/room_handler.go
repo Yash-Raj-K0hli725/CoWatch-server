@@ -4,6 +4,7 @@ import (
 	"StreamRoom/errz"
 	"StreamRoom/internal/domain"
 	"StreamRoom/internal/service"
+	"StreamRoom/internal/views"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -25,7 +26,15 @@ func NewRoomsHandler(group *echo.Group, service *service.RoomService) *RoomsHand
 }
 
 func (h *RoomsHandler) CreateNewRoom(c echo.Context) error {
-	response := h.s.GetCreateRoom()
+	var roomConfig views.CreateRoomRequest
+	err := c.Bind(&roomConfig)
+	if err != nil {
+		return errz.NewBadRequest("invalid request!")
+	}
+	if roomConfig.RoomName == "" {
+		return errz.NewBadRequest("room name is required!")
+	}
+	response := h.s.GetCreateRoom(roomConfig)
 	return c.JSON(http.StatusOK, response)
 }
 

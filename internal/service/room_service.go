@@ -16,7 +16,7 @@ func NewRoomService() *RoomService {
 	return &RoomService{}
 }
 
-func (s *RoomService) GetCreateRoom() *views.RoomResponse {
+func (s *RoomService) GetCreateRoom(request views.CreateRoomRequest) *views.RoomResponse {
 	domain.RoomsMu.Lock()
 	defer domain.RoomsMu.Unlock()
 
@@ -25,6 +25,7 @@ func (s *RoomService) GetCreateRoom() *views.RoomResponse {
 
 	newRoom := &views.RoomResponse{
 		ID:        roomID,
+		RoomName:  request.RoomName,
 		StartedAt: time.Now(), // The live broadcast ticker clock begins ticking NOW
 	}
 
