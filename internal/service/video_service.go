@@ -166,6 +166,6 @@ func (s *VideoService) createMasterPlaylist(outputDir string) {
 }
 
 func (s *VideoService) GenerateUploadUrl(c context.Context, roomID string) (string, error) {
-	objectKey := fmt.Sprintf("videos/%s/%s_%s.mp4", roomID, roomID, time.Unix(time.Now().Unix()/1000, 0))
+	objectKey := fmt.Sprintf("videos/%s/%s_%d.mp4", roomID, roomID, time.Now().Unix()/1000)
 	return s.r2.GenerateUploadURL(c, "video/mp4", objectKey)
 }

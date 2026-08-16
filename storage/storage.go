@@ -15,7 +15,7 @@ import (
 func InitStorage() *s3.Client {
 	accessKey := os.Getenv("STORAGE_ACCESS_KEY_ID")
 	secretKey := os.Getenv("STORAGE_SECRET_KEY")
-	host := os.Getenv("STORAGE_R2_API")
+	host := os.Getenv("STORAGE_S3_API")
 	cleanHost := strings.TrimPrefix(host, "https://")
 	cleanHost = strings.TrimSuffix(cleanHost, "/")
 	cfg, err := config.LoadDefaultConfig(context.TODO(),
