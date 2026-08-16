@@ -3,6 +3,7 @@ package server
 import (
 	"StreamRoom/internal/handler"
 	"StreamRoom/internal/service"
+	storage "StreamRoom/storage"
 	"net/http"
 	"os"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func (s *Server) RegisterRoutes() http.Handler {
+func (s *Server) RegisterRoutes(storageService *storage.R2MediaService) http.Handler {
 
 	/*--------prefix---------*/
 	apiGroup := s.e.Group("/api")
@@ -26,7 +27,7 @@ func (s *Server) RegisterRoutes() http.Handler {
 
 	/*-------------Service Layer------------*/
 	roomService := service.NewRoomService()
-	videoService := service.NewVideoService()
+	videoService := service.NewVideoService(storageService)
 
 	/*-------------Handler Layer-------------*/
 	//##-with auth-##

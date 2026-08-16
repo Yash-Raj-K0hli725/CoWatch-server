@@ -2,6 +2,7 @@ package server
 
 import (
 	"StreamRoom/errz"
+	"StreamRoom/storage"
 	"errors"
 	"fmt"
 	"log"
@@ -36,7 +37,9 @@ func (s *Server) Init() error {
 	//}))
 
 	/*----echo-config----*/
-	e.Server.Handler = s.RegisterRoutes()
+	r2Client := storage.InitStorage()
+	storageService := storage.NewR2MediaService(r2Client, os.Getenv("BUCKET_NAME"))
+	e.Server.Handler = s.RegisterRoutes(storageService)
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
 		response := errz.FormatError(err)
 		if !c.Response().Committed {
@@ -55,7 +58,7 @@ func (s *Server) Init() error {
 func (s *Server) Run() {
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8090" //default
 	}
 
 	log.Printf("Starting server on port %s", port)

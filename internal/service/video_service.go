@@ -1,7 +1,9 @@
 package service
 
 import (
+	"StreamRoom/storage"
 	"StreamRoom/util"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -10,10 +12,12 @@ import (
 	"time"
 )
 
-type VideoService struct{}
+type VideoService struct {
+	r2 *storage.R2MediaService
+}
 
-func NewVideoService() *VideoService {
-	return &VideoService{}
+func NewVideoService(r2 *storage.R2MediaService) *VideoService {
+	return &VideoService{r2: r2}
 }
 
 // UploadToStorage simulates saving to S3/CDN or local disk
@@ -22,7 +26,7 @@ func (s *VideoService) UploadToStorage(file io.Reader, filename string) (string,
 	cleanName := filepath.Base(filename)
 	cleanName = util.SanitizeFilename(cleanName)
 	uniqueId := fmt.Sprintf("%d_%s", time.Now().Unix(), cleanName)
-	outputDir := filepath.Join("C:/StreamRoom/storage", uniqueId)
+	outputDir := filepath.Join("C:/co-watch/videos", uniqueId)
 	_ = os.MkdirAll(outputDir, os.ModePerm)
 
 	rawPath := filepath.Join(outputDir, "raw_"+cleanName)
@@ -159,4 +163,9 @@ func (s *VideoService) createMasterPlaylist(outputDir string) {
 `
 	masterPath := filepath.Join(outputDir, "master.m3u8")
 	_ = os.WriteFile(masterPath, []byte(masterContent), 0644)
+}
+
+func (s *VideoService) GenerateUploadUrl(c context.Context, roomID string) (string, error) {
+	objectKey := fmt.Sprintf("videos/%s/%s_%s.mp4", roomID, roomID, time.Unix(time.Now().Unix()/1000, 0))
+	return s.r2.GenerateUploadURL(c, "video/mp4", objectKey)
 }
