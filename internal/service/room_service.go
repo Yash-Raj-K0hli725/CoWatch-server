@@ -10,23 +10,29 @@ import (
 )
 
 // RoomService handles generation and storage of synced rooms
-type RoomService struct{}
-
-func NewRoomService() *RoomService {
-	return &RoomService{}
+type RoomService struct {
+	v *VideoService
 }
 
-func (s *RoomService) GetCreateRoom(request views.CreateRoomRequest) *views.RoomResponse {
+func NewRoomService(v *VideoService) *RoomService {
+	return &RoomService{v: v}
+}
+
+func (s *RoomService) GetCreateRoom(c context.Context, request views.CreateRoomRequest) (*views.RoomResponse, error) {
 	domain.RoomsMu.Lock()
 	defer domain.RoomsMu.Unlock()
 
 	// Generate a short, unique alphanumeric room code
 	roomID := fmt.Sprintf("ROOM-%d", time.Now().UnixNano()%100000)
-
+	uploadURL, err := s.v.GenerateUploadUrl(c, roomID)
+	if err != nil {
+		return nil, err
+	}
 	newRoom := &views.RoomResponse{
 		ID:        roomID,
+		UploadUrl: uploadURL,
 		RoomName:  request.RoomName,
-		StartedAt: time.Now(), // The live broadcast ticker clock begins ticking NOW
+		CreatedAt: time.Now(), // The live broadcast ticker clock begins ticking NOW
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -43,7 +49,7 @@ func (s *RoomService) GetCreateRoom(request views.CreateRoomRequest) *views.Room
 	// Note: In your final system, you would trigger the background synchronization loop
 	// (like the ticker we designed earlier) right here using: go runRoomSyncLoop(newRoom)
 
-	return newRoom
+	return newRoom, nil
 }
 
 func (s *RoomService) Konnection(room *domain.Room, client *domain.Client) {

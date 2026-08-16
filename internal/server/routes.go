@@ -26,8 +26,8 @@ func (s *Server) RegisterRoutes(storageService *storage.R2MediaService) http.Han
 	publicGroup := s.e.Group("/public")
 
 	/*-------------Service Layer------------*/
-	roomService := service.NewRoomService()
 	videoService := service.NewVideoService(storageService)
+	roomService := service.NewRoomService(videoService)
 
 	/*-------------Handler Layer-------------*/
 	//##-with auth-##

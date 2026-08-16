@@ -7,9 +7,9 @@ import (
 // RoomResponse representation
 type RoomResponse struct {
 	ID        string    `json:"room_id"`
-	VideoURL  string    `json:"video_url"`
 	RoomName  string    `json:"room_name"`
-	StartedAt time.Time `json:"started_at"`
+	UploadUrl string    `json:"upload_url"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type CreateRoomRequest struct {

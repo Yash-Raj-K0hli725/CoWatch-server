@@ -27,14 +27,16 @@ func NewRoomsHandler(group *echo.Group, service *service.RoomService) *RoomsHand
 
 func (h *RoomsHandler) CreateNewRoom(c echo.Context) error {
 	var roomConfig views.CreateRoomRequest
-	err := c.Bind(&roomConfig)
-	if err != nil {
+	if err := c.Bind(&roomConfig); err != nil {
 		return errz.NewBadRequest("invalid request!")
 	}
 	if roomConfig.RoomName == "" {
 		return errz.NewBadRequest("room name is required!")
 	}
-	response := h.s.GetCreateRoom(roomConfig)
+	response, err := h.s.GetCreateRoom(c.Request().Context(), roomConfig)
+	if err != nil {
+		return err
+	}
 	return c.JSON(http.StatusOK, response)
 }
 
