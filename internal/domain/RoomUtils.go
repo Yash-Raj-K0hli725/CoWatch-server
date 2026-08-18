@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/labstack/gommon/log"
 )
 
@@ -18,30 +17,22 @@ func (r *Room) startBroadcasting() {
 		select {
 		case <-ticker.C:
 			r.Mu.Lock()
+			empty := len(r.Clients) == 0
+			msg := views.SyncResponse{
+				IsPlaying: r.IsPlaying,
+				CurrentMS: r.GetLivePosition(),
+			}
+			r.Mu.Unlock()
 
-			if len(r.Clients) == 0 {
-				r.Mu.Unlock()
+			if empty {
 				log.Printf("[Room %s] Cleaning up empty room", r.ID)
 				DeleteRoom(r.ID)
 				r.Cancel()
 				return
 			}
 
-			// Broadcast current state frame to everyone
-			msg := views.SyncResponse{
-				IsPlaying: r.IsPlaying,
-				CurrentMS: r.GetLivePosition(),
-			}
 			payload, _ := json.Marshal(msg)
-
-			for client := range r.Clients {
-				err := client.Conn.WriteMessage(websocket.TextMessage, payload)
-				if err != nil {
-					client.Conn.Close()
-					delete(r.Clients, client)
-				}
-			}
-			r.Mu.Unlock()
+			r.Broadcast(payload)
 
 		case <-r.Ctx.Done():
 			return

@@ -2,16 +2,17 @@ package server
 
 import (
 	"StreamRoom/internal/handler"
+	"StreamRoom/internal/queue"
 	"StreamRoom/internal/service"
 	storage "StreamRoom/storage"
 	"net/http"
 	"os"
 
 	echojwt "github.com/labstack/echo-jwt/v4"
-	"github.com/labstack/echo/v4"
+	goredis "github.com/redis/go-redis/v9"
 )
 
-func (s *Server) RegisterRoutes(storageService *storage.R2MediaService) http.Handler {
+func (s *Server) RegisterRoutes(storageService *storage.R2MediaService, transcodeQueue queue.Producer, rdb *goredis.Client) http.Handler {
 
 	/*--------prefix---------*/
 	apiGroup := s.e.Group("/api")
@@ -26,20 +27,21 @@ func (s *Server) RegisterRoutes(storageService *storage.R2MediaService) http.Han
 	publicGroup := s.e.Group("/public")
 
 	/*-------------Service Layer------------*/
-	videoService := service.NewVideoService(storageService)
+	videoService := service.NewVideoService(storageService, transcodeQueue, os.Getenv("BUCKET_NAME"))
 	roomService := service.NewRoomService(videoService)
+
+	// Bridge worker-published video lifecycle events (PROCESSING/READY/
+	// FAILED, over Redis pub/sub) back into this process's in-memory room
+	// state + connected websockets.
+	roomService.StartVideoEventListener(s.ctx, rdb)
 
 	/*-------------Handler Layer-------------*/
 	//##-with auth-##
 
 	//##-without auth-##
 	handler.NewRoomsHandler(apiGroup, roomService)
-	handler.NewVideoHandler(apiGroup, videoService, roomService)
+	handler.NewVideoHandler(apiGroup, videoService, roomService, os.Getenv("WEBHOOK_SIGNING_SECRET"))
 	publicGroup.GET("/health", s.healthHandler)
 
 	return s.e
-}
-
-func (s *Server) healthHandler(c echo.Context) error {
-	return c.JSON(http.StatusOK, "good")
 }

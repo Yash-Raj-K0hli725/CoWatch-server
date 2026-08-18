@@ -45,11 +45,24 @@ func (h *RoomsHandler) FindRoom(c echo.Context) error {
 	if roomId == "" {
 		return errz.NewBadRequest("room id cannot be empty")
 	}
-	room, ok := domain.RoomsMap[roomId]
-	if !ok {
+	room := domain.GetRoom(roomId)
+	if room == nil {
 		return errz.NewNotFound("room not found")
 	}
-	return c.JSON(http.StatusOK, room)
+
+	room.Mu.Lock()
+	resp := views.RoomStatusResponse{
+		ID:                room.ID,
+		IsPlaying:         room.IsPlaying,
+		CurrentPositionMs: room.GetLivePosition(),
+		VideoStatus:       string(room.VideoStatus),
+		PlaybackURL:       room.PlaybackURL,
+		Qualities:         room.Qualities,
+		VideoError:        room.VideoError,
+	}
+	room.Mu.Unlock()
+
+	return c.JSON(http.StatusOK, resp)
 }
 
 var upgrader = websocket.Upgrader{

@@ -4,20 +4,17 @@ import (
 	"StreamRoom/internal/server"
 	"context"
 	"log"
-	"net/http"
 	"os/signal"
 	"syscall"
 	"time"
 )
 
-func gracefulShutdown(apiServer *http.Server, done chan bool) {
+func gracefulShutdown(s *server.Server, done chan bool) {
 	// Create context that listens for the interrupt signal from the OS.
 	defer func() {
 		done <- true
 	}()
-	if apiServer == nil {
-		return
-	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer stop()
 
@@ -27,11 +24,11 @@ func gracefulShutdown(apiServer *http.Server, done chan bool) {
 	log.Println("shutting down gracefully, press Ctrl+C again to force")
 	stop() // Allow Ctrl+C to force shutdown
 
-	// The context is used to inform the server it has 5 seconds to finish
+	// The context is used to inform the server it has 10 seconds to finish
 	// the request it is currently handling
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := apiServer.Shutdown(ctx); err != nil {
+	if err := s.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server forced to shutdown with error: %v", err)
 	}
 
@@ -45,11 +42,10 @@ func main() {
 		log.Fatal(err)
 		return
 	}
-	mServer := s.GetServer()
 	// Create a done channel to signal when the shutdown is complete
 	done := make(chan bool, 1)
 	// Run graceful shutdown in a separate goroutine
-	go gracefulShutdown(mServer, done)
+	go gracefulShutdown(s, done)
 
 	s.Run()
 	// Wait for the graceful shutdown to complete
