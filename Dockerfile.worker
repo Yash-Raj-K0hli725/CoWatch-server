@@ -1,0 +1,21 @@
+# syntax=docker/dockerfile:1
+
+# --- Build ---------------------------------------------------------------
+FROM golang:1.26-alpine AS build
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -o /out/worker ./cmd/worker
+
+# --- Runtime ---------------------------------------------------------------
+# Alpine's ffmpeg package bundles ffprobe too, so the worker doesn't depend
+# on a host-installed ffmpeg (unlike local Windows dev, which points
+# FFMPEG_PATH/FFPROBE_PATH at C:\ffmpeg).
+FROM alpine:3.20
+RUN apk add --no-cache ffmpeg ca-certificates
+COPY --from=build /out/worker /usr/local/bin/worker
+
+ENTRYPOINT ["/usr/local/bin/worker"]

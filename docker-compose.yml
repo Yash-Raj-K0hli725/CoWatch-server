@@ -1,0 +1,52 @@
+name: streamroom
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      REDIS_ADDR: redis:6379
+      PORT: "8090"
+    ports:
+      - "8090:8090"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file: .env
+    environment:
+      REDIS_ADDR: redis:6379
+      FFMPEG_PATH: ffmpeg
+      FFPROBE_PATH: ffprobe
+      TRANSCODE_TEMP_DIR: /tmp/streamroom
+    depends_on:
+      redis:
+        condition: service_healthy
+
+# Scale the worker fleet with, e.g.:
+#   docker compose up --scale worker=4
+# Every replica shares the same consumer group (QUEUE_CONSUMER_GROUP), so
+# Redis load-balances pending jobs across them automatically -- no other
+# config needed to add throughput.
+
+volumes:
+  redis-data:
