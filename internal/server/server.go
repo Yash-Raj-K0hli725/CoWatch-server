@@ -1,6 +1,7 @@
 package server
 
 import (
+	"StreamRoom/db"
 	"StreamRoom/errz"
 	"StreamRoom/storage"
 	"errors"
@@ -15,7 +16,8 @@ import (
 )
 
 type Server struct {
-	e *echo.Echo
+	e  *echo.Echo
+	db *db.Service
 }
 
 func NewServer() *Server {
@@ -25,7 +27,7 @@ func NewServer() *Server {
 func (s *Server) Init() error {
 	e := echo.New()
 	s.e = e
-
+	s.db = db.New()
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 	//e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
