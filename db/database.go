@@ -23,7 +23,7 @@ var DB *gorm.DB
 var dbService *Service
 
 var (
-	database = os.Getenv("DB_DATABASE")
+	database = os.Getenv("DB_NAME")
 	password = os.Getenv("DB_PASSWORD")
 	username = os.Getenv("DB_USERNAME")
 	port     = os.Getenv("DB_PORT")

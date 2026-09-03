@@ -3,13 +3,17 @@ package server
 import (
 	"StreamRoom/db"
 	"StreamRoom/errz"
+	"StreamRoom/internal/domain/mq"
 	"StreamRoom/storage"
+	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
+	"github.com/charmbracelet/log"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -58,6 +62,8 @@ func (s *Server) Init() error {
 }
 
 func (s *Server) Run() {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8090" //default
@@ -68,7 +74,12 @@ func (s *Server) Run() {
 	if !errors.Is(err, http.ErrServerClosed) && err != nil {
 		log.Fatalf("Shutting down the server due to error: %v", err)
 	}
-	log.Println("Server connection pool closed.")
+
+	consumer := mq.NewConsumer("amqp://guest:guest@localhost:5672/", "add")
+	if err = consumer.Start(ctx); err != nil {
+		log.Errorf("failed to initiate rabbitM queue : %v", err)
+	}
+	log.Print("Server connection pool closed.")
 }
 
 func (s *Server) GetServer() *http.Server {
