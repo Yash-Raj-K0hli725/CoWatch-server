@@ -30,7 +30,7 @@ func (s *Server) RegisterRoutes(producer *mq.Producer) {
 
 	/*-------------Service Layer------------*/
 	videoService := service.NewVideoService(storageService)
-	roomService := service.NewRoomService(videoService)
+	roomService := service.NewRoomService(videoService, producer)
 
 	/*-------------Handler Layer-------------*/
 	//##-with auth-##

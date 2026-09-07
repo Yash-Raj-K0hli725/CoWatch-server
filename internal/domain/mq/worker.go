@@ -85,7 +85,7 @@ func (w *Worker) ProcessDelivery(ctx context.Context, d amqp.Delivery) (err erro
 
 	// 3. Finished Stage & Ack
 	currentStage = enums.TaskProcessed
-	w.logger.Printf("Stage: %s | Task ID: %s", currentStage, task.ID)
+	w.logger.Printf("Stage: %s | RoomID: %s", currentStage, task.ID)
 	if err = d.Ack(false); err != nil {
 		w.logger.Printf("Failed to Ack message: %v", err)
 	}

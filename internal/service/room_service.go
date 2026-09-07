@@ -2,20 +2,26 @@ package service
 
 import (
 	"StreamRoom/internal/domain"
+	"StreamRoom/internal/domain/mq"
 	"StreamRoom/internal/views"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/charmbracelet/log"
 )
 
 // RoomService handles generation and storage of synced rooms
 type RoomService struct {
-	v *VideoService
+	v  *VideoService
+	pr *mq.Producer
 }
 
-func NewRoomService(v *VideoService) *RoomService {
-	return &RoomService{v: v}
+func NewRoomService(v *VideoService, producer *mq.Producer) *RoomService {
+	return &RoomService{v: v,
+		pr: producer}
 }
 
 func (s *RoomService) GetCreateRoom(c context.Context, request views.CreateRoomRequest) (*views.RoomResponse, error) {
@@ -74,4 +80,18 @@ func (s *RoomService) Konnection(room *domain.Room, client *domain.Client) {
 			room.HandleAction(action)
 		}
 	}
+}
+
+func (s *RoomService) OnUploadComplete(c context.Context, r *domain.Room) error {
+	roomID := r.ID
+	obzect := r.Obzect
+	if err := s.pr.PushTask(c, views.TaskRequest{
+		ID:        roomID,
+		CreatedAt: time.Now(),
+		Obzect:    obzect,
+	}); err != nil {
+		log.Errorf("failed to push task to queue ::%v", err)
+		return errors.New("failed to start video compression")
+	}
+	return nil
 }

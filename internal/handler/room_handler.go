@@ -22,6 +22,7 @@ func NewRoomsHandler(group *echo.Group, service *service.RoomService) *RoomsHand
 	group.POST("/room/create", h.CreateNewRoom)
 	group.GET("/room/find", h.FindRoom)
 	group.GET("/room/join", h.JoinRoom)
+	group.PUT("/room/upload/complete/:id", h.OnUploadComplete)
 	return h
 }
 
@@ -74,4 +75,19 @@ func (h *RoomsHandler) JoinRoom(c echo.Context) error {
 
 	h.s.Konnection(room, client)
 	return nil
+}
+
+func (h *RoomsHandler) OnUploadComplete(c echo.Context) error {
+	roomID := c.Param("id")
+	if roomID == "" {
+		return errz.NewBadRequest("invalid room id")
+	}
+	room := domain.GetRoom(roomID)
+	if room == nil {
+		return errz.NewBadRequest("room not found")
+	}
+	if err := h.s.OnUploadComplete(c.Request().Context(), room); err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, views.Response{Code: 200, Message: "compression started."})
 }
