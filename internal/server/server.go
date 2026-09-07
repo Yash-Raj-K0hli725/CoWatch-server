@@ -4,7 +4,6 @@ import (
 	"StreamRoom/db"
 	"StreamRoom/errz"
 	"StreamRoom/internal/domain/mq"
-	"StreamRoom/storage"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/charmbracelet/log"
 	_ "github.com/joho/godotenv/autoload"
@@ -20,9 +20,13 @@ import (
 )
 
 type Server struct {
-	e  *echo.Echo
-	db *db.Service
+	e        *echo.Echo
+	db       *db.Service
+	producer *mq.Producer
+	consumer *mq.Consumer
 }
+
+const RabbitBaseURL = "amqp://guest:guest@127.0.0.1:5672/"
 
 func NewServer() *Server {
 	return &Server{}
@@ -43,9 +47,11 @@ func (s *Server) Init() error {
 	//}))
 
 	/*----echo-config----*/
-	r2Client := storage.InitStorage()
-	storageService := storage.NewR2MediaService(r2Client, os.Getenv("BUCKET_NAME"))
-	e.Server.Handler = s.RegisterRoutes(storageService)
+	var err error
+	s.producer, err = mq.NewProducer("add", RabbitBaseURL)
+	s.consumer = mq.NewConsumer("add", RabbitBaseURL)
+
+	s.RegisterRoutes(s.producer)
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
 		response := errz.FormatError(err)
 		if !c.Response().Committed {
@@ -54,7 +60,7 @@ func (s *Server) Init() error {
 	}
 
 	//todo add storage cdn (Cloud flare)
-	err := os.MkdirAll("./storage", os.ModePerm)
+	err = os.MkdirAll("./storage", os.ModePerm)
 	if err != nil {
 		log.Fatalf("failed to initialize storage path on local machine... :: %v", err)
 	}
@@ -62,24 +68,31 @@ func (s *Server) Init() error {
 }
 
 func (s *Server) Run() {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
+	defer stop()
+
+	go func() {
+		if err := s.consumer.Start(ctx); err != nil {
+			log.Errorf("failed to initiate rabbitM queue : %v", err)
+		}
+	}()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8090" //default
 	}
 
-	log.Printf("Starting server on port %s", port)
-	err := s.e.Start(fmt.Sprintf(":%s", port))
-	if !errors.Is(err, http.ErrServerClosed) && err != nil {
-		log.Fatalf("Shutting down the server due to error: %v", err)
-	}
+	go func() {
+		log.Printf("Starting server on port %s", port)
+		err := s.e.Start(fmt.Sprintf(":%s", port))
+		if !errors.Is(err, http.ErrServerClosed) && err != nil {
+			log.Fatalf("Shutting down the server due to error: %v", err)
+		}
+	}()
 
-	consumer := mq.NewConsumer("amqp://guest:guest@localhost:5672/", "add")
-	if err = consumer.Start(ctx); err != nil {
-		log.Errorf("failed to initiate rabbitM queue : %v", err)
-	}
-	log.Print("Server connection pool closed.")
+	<-ctx.Done()
+	log.Info("Shutdown signal received. Starting graceful drain...")
+	s.gracefulShutdown()
 }
 
 func (s *Server) GetServer() *http.Server {
@@ -87,6 +100,20 @@ func (s *Server) GetServer() *http.Server {
 		return s.e.Server
 	}
 	return nil
+}
+
+func (s *Server) gracefulShutdown() {
+	// The context is used to inform the server it has 5 seconds to finish
+	// the request it is currently handling
+	shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.e.Shutdown(shutdownContext); err != nil {
+		log.Printf("Server forced to shutdown with error: %v", err)
+	}
+	if s.producer != nil {
+		s.producer.Close()
+	}
+	log.Print("Server exiting")
 }
 
 //func (s *Server) dbHealth(c echo.Context) error {

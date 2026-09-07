@@ -18,10 +18,9 @@ type Consumer struct {
 	queueName string
 	conn      *amqp.Connection
 	ch        *amqp.Channel
-	wg        sync.WaitGroup
 }
 
-func NewConsumer(url, queueName string) *Consumer {
+func NewConsumer(queueName, url string) *Consumer {
 	return &Consumer{
 		url:       url,
 		queueName: queueName,
@@ -63,7 +62,6 @@ func (c *Consumer) connectAndConsume(ctx context.Context) error {
 	}
 	defer c.ch.Close()
 
-	// Declare durable queue
 	_, err = c.ch.QueueDeclare(
 		c.queueName,
 		true,  // durable
@@ -96,8 +94,10 @@ func (c *Consumer) connectAndConsume(ctx context.Context) error {
 	}
 	log.Printf("[RabbitMQ] Consumer ready. Worker PID: %d", os.Getpid())
 	// Listen for unexpected channel/connection closures
-	closeErrChan := make(chan *amqp.Error, 1)
-	c.ch.NotifyClose(closeErrChan)
+	channelErr := make(chan *amqp.Error, 1)
+	connectionErr := make(chan *amqp.Error, 1)
+	c.ch.NotifyClose(channelErr)
+	c.conn.NotifyClose(connectionErr)
 
 	workCtx, cancelWorkers := context.WithCancel(ctx)
 	defer cancelWorkers()
@@ -119,12 +119,8 @@ func (c *Consumer) connectAndConsume(ctx context.Context) error {
 						return
 					}
 					// Process message with manual Ack/Nack
-					if err = worker.ProcessDelivery(workCtx, d); err != nil {
+					if err := worker.ProcessDelivery(workCtx, d); err != nil {
 						log.Printf("[RabbitMQ] Handler error: %v (nack-ing message)", err)
-						// Requeue message or forward to a Dead-Letter-Exchange (DLX)
-						_ = d.Nack(false, true)
-					} else {
-						_ = d.Ack(false)
 					}
 				}
 			}
@@ -138,14 +134,21 @@ func (c *Consumer) connectAndConsume(ctx context.Context) error {
 		log.Print("[RabbitMQ] Termination signal received. Initiating graceful drain...")
 		cancelWorkers()
 
-	case amqpErr, ok := <-closeErrChan:
+	case amqpErr, ok := <-channelErr:
 		if ok && amqpErr != nil {
 			returnErr = fmt.Errorf("channel closed unexpectedly: %w", amqpErr)
 			log.Printf("[RabbitMQ] %v", returnErr)
 		}
 		cancelWorkers()
+
+	case amqpErr, ok := <-connectionErr:
+		if ok && amqpErr != nil {
+			returnErr = fmt.Errorf("connection closed unexpectedly: %w", amqpErr)
+			log.Printf("[RabbitMQ] %v", returnErr)
+		}
+		cancelWorkers()
 	}
-	
+
 	wg.Wait()
 	log.Info("[RabbitMQ] All workers drained successfully.")
 

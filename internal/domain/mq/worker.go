@@ -5,6 +5,7 @@ import (
 	"StreamRoom/internal/views"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -43,7 +44,7 @@ func (w *Worker) ProcessDelivery(ctx context.Context, d amqp.Delivery) (err erro
 	// 1. Validation & Unmarshaling Stage
 	currentStage = enums.TaskValidating
 	var task views.TaskRequest
-	if err := json.Unmarshal(d.Body, &task); err != nil {
+	if err = json.Unmarshal(d.Body, &task); err != nil {
 		w.logger.Printf("Stage: %s | Invalid JSON: %v", currentStage, err)
 		_ = d.Nack(false, false) // Malformed payloads should not be requeued
 		return err
@@ -66,14 +67,29 @@ func (w *Worker) ProcessDelivery(ctx context.Context, d amqp.Delivery) (err erro
 	if err != nil {
 		currentStage = enums.TaskFailed
 		w.logger.Printf("Stage: %s | Execution error: %v", currentStage, err)
-		_ = d.Nack(false, true) // Requeue for transient failures
+		// Check if error was caused by shutdown context cancellation
+		requeue := true
+		if errors.Is(jobCtx.Err(), context.Canceled) {
+			w.logger.Printf("Stage: %s | Shutdown in progress, returning task to queue", currentStage)
+			requeue = true
+		} else if errors.Is(jobCtx.Err(), context.DeadlineExceeded) {
+			w.logger.Printf("Stage: %s | Task execution timed out (5m)", currentStage)
+			requeue = false // Route to DLQ rather than retrying indefinitely
+		}
+
+		if nackErr := d.Nack(false, requeue); nackErr != nil {
+			w.logger.Printf("Failed to Nack delivery: %v", nackErr)
+		}
 		return err
 	}
 
 	// 3. Finished Stage & Ack
 	currentStage = enums.TaskProcessed
-	w.logger.Printf("Stage: %s | Task ID: %s ", currentStage, task.ID)
-	return d.Ack(false)
+	w.logger.Printf("Stage: %s | Task ID: %s", currentStage, task.ID)
+	if err = d.Ack(false); err != nil {
+		w.logger.Printf("Failed to Ack message: %v", err)
+	}
+	return err
 }
 
 func (w *Worker) startCompilation(ctx context.Context, obzect string) error {
