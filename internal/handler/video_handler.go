@@ -2,7 +2,9 @@ package handler
 
 import (
 	"StreamRoom/internal/service"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/labstack/echo/v4"
 )
@@ -19,7 +21,8 @@ func NewVideoHandler(group *echo.Group, videoService *service.VideoService, room
 
 func (h *VideoHandler) GetVideoUploadUrl(c echo.Context) error {
 	roomID := c.QueryParam("room_id")
-	url, err := h.s.GenerateUploadUrl(c.Request().Context(), roomID)
+	objectKey := fmt.Sprintf("videos/%s/%s_%d.mp4", roomID, roomID, time.Now().Unix()/1000)
+	url, err := h.s.GenerateUploadUrl(c.Request().Context(), objectKey)
 	if err != nil {
 		return err
 	}

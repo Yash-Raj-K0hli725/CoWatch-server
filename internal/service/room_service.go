@@ -23,8 +23,9 @@ func (s *RoomService) GetCreateRoom(c context.Context, request views.CreateRoomR
 	defer domain.RoomsMu.Unlock()
 
 	// Generate a short, unique alphanumeric room code
-	roomID := fmt.Sprintf("ROOM-%d", time.Now().UnixNano()%100000)
-	uploadURL, err := s.v.GenerateUploadUrl(c, roomID)
+	roomID := fmt.Sprintf("CO-WATCH-%d", time.Now().UnixNano()%100000)
+	obzectKey := fmt.Sprintf("videos/%s/%s_%d.mp4", roomID, roomID, time.Now().Unix()/1000)
+	uploadURL, err := s.v.GenerateUploadUrl(c, obzectKey)
 	if err != nil {
 		return nil, err
 	}
@@ -38,31 +39,29 @@ func (s *RoomService) GetCreateRoom(c context.Context, request views.CreateRoomR
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	domain.RoomsMap[roomID] = &domain.Room{
 		ID:                roomID,
-		Clients:           make(map[*domain.Client]bool),
+		Clients:           make(map[*domain.Client]struct{}),
 		IsPlaying:         true, // Play by default when room initializes
 		CurrentPositionMs: 0,
+		Obzect:            obzectKey,
 		LastUpdated:       time.Now(),
 		Ctx:               ctx,
 		Cancel:            cancel,
 	}
-
-	// Note: In your final system, you would trigger the background synchronization loop
-	// (like the ticker we designed earlier) right here using: go runRoomSyncLoop(newRoom)
 
 	return newRoom, nil
 }
 
 func (s *RoomService) Konnection(room *domain.Room, client *domain.Client) {
 	defer func() {
-		room.Mu.Lock()
+		room.Synx.Lock()
 		delete(room.Clients, client)
-		client.Conn.Close()
-		room.Mu.Unlock()
+		_ = client.Conn.Close()
+		room.Synx.Unlock()
 	}()
 
-	room.Mu.Lock()
-	room.Clients[client] = true
-	room.Mu.Unlock()
+	room.Synx.Lock()
+	room.Clients[client] = struct{}{}
+	room.Synx.Unlock()
 	// ACTIVE READ LOOP: Listen for incoming Pause/Play/Seek events from this client
 	for {
 		_, msgBytes, err := client.Conn.ReadMessage()
@@ -70,9 +69,9 @@ func (s *RoomService) Konnection(room *domain.Room, client *domain.Client) {
 			break // Client disconnected
 		}
 
-		var actionMsg views.ActionRequest
-		if err := json.Unmarshal(msgBytes, &actionMsg); err == nil {
-			room.HandleAction(actionMsg)
+		var action views.ActionRequest
+		if err := json.Unmarshal(msgBytes, &action); err == nil {
+			room.HandleAction(action)
 		}
 	}
 }

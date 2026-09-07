@@ -165,7 +165,6 @@ func (s *VideoService) createMasterPlaylist(outputDir string) {
 	_ = os.WriteFile(masterPath, []byte(masterContent), 0644)
 }
 
-func (s *VideoService) GenerateUploadUrl(c context.Context, roomID string) (string, error) {
-	objectKey := fmt.Sprintf("videos/%s/%s_%d.mp4", roomID, roomID, time.Now().Unix()/1000)
-	return s.r2.GenerateUploadURL(c, "video/mp4", objectKey)
+func (s *VideoService) GenerateUploadUrl(c context.Context, obzectKey string) (string, error) {
+	return s.r2.GenerateUploadURL(c, "video/mp4", obzectKey)
 }

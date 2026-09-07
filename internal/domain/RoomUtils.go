@@ -17,10 +17,10 @@ func (r *Room) startBroadcasting() {
 	for {
 		select {
 		case <-ticker.C:
-			r.Mu.Lock()
+			r.Synx.Lock()
 
 			if len(r.Clients) == 0 {
-				r.Mu.Unlock()
+				r.Synx.Unlock()
 				log.Printf("[Room %s] Cleaning up empty room", r.ID)
 				DeleteRoom(r.ID)
 				r.Cancel()
@@ -37,11 +37,11 @@ func (r *Room) startBroadcasting() {
 			for client := range r.Clients {
 				err := client.Conn.WriteMessage(websocket.TextMessage, payload)
 				if err != nil {
-					client.Conn.Close()
+					_ = client.Conn.Close()
 					delete(r.Clients, client)
 				}
 			}
-			r.Mu.Unlock()
+			r.Synx.Unlock()
 
 		case <-r.Ctx.Done():
 			return
@@ -50,8 +50,8 @@ func (r *Room) startBroadcasting() {
 }
 
 func (r *Room) HandleAction(act views.ActionRequest) {
-	r.Mu.Lock()
-	defer r.Mu.Unlock()
+	r.Synx.Lock()
+	defer r.Synx.Unlock()
 	do := enums.Action(act.Action)
 	switch do {
 	case enums.PAUSE:

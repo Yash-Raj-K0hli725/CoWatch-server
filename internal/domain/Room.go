@@ -14,10 +14,11 @@ type Client struct {
 
 type Room struct {
 	ID      string
-	Clients map[*Client]bool
-	Mu      sync.Mutex
+	Clients map[*Client]struct{}
+	Synx    sync.Mutex
 	Ctx     context.Context
 	Cancel  context.CancelFunc
+	Obzect  string
 
 	// Shared Video State
 	IsPlaying         bool
