@@ -1,12 +1,14 @@
 package mq
 
 import (
+	"StreamRoom/internal/service/cogine"
 	"context"
 	"fmt"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/charmbracelet/log"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -18,12 +20,14 @@ type Consumer struct {
 	queueName string
 	conn      *amqp.Connection
 	ch        *amqp.Channel
+	r2Client  *s3.Client
 }
 
-func NewConsumer(queueName, url string) *Consumer {
+func NewConsumer(queueName, url string, client *s3.Client) *Consumer {
 	return &Consumer{
 		url:       url,
 		queueName: queueName,
+		r2Client:  client,
 	}
 }
 
@@ -107,7 +111,7 @@ func (c *Consumer) connectAndConsume(ctx context.Context) error {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			worker := NewWorker(workerID)
+			worker := NewWorker(workerID, cogine.NewCogine(c.r2Client))
 			for {
 				select {
 				case <-workCtx.Done():

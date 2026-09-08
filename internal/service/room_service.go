@@ -4,6 +4,7 @@ import (
 	"StreamRoom/internal/domain"
 	"StreamRoom/internal/domain/mq"
 	"StreamRoom/internal/views"
+	"StreamRoom/storage"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,12 +16,13 @@ import (
 
 // RoomService handles generation and storage of synced rooms
 type RoomService struct {
-	v  *VideoService
+	r2 *storage.R2MediaService
 	pr *mq.Producer
 }
 
-func NewRoomService(v *VideoService, producer *mq.Producer) *RoomService {
-	return &RoomService{v: v,
+func NewRoomService(r2 *storage.R2MediaService, producer *mq.Producer) *RoomService {
+	return &RoomService{
+		r2: r2,
 		pr: producer}
 }
 
@@ -31,7 +33,7 @@ func (s *RoomService) GetCreateRoom(c context.Context, request views.CreateRoomR
 	// Generate a short, unique alphanumeric room code
 	roomID := fmt.Sprintf("CO-WATCH-%d", time.Now().UnixNano()%100000)
 	obzectKey := fmt.Sprintf("videos/%s/%s_%d.mp4", roomID, roomID, time.Now().Unix()/1000)
-	uploadURL, err := s.v.GenerateUploadUrl(c, obzectKey)
+	uploadURL, err := s.r2.GenerateUploadURL(c, "video/mp4", obzectKey)
 	if err != nil {
 		return nil, err
 	}

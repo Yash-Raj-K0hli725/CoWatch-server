@@ -4,6 +4,7 @@ import (
 	"StreamRoom/db"
 	"StreamRoom/errz"
 	"StreamRoom/internal/domain/mq"
+	"StreamRoom/storage"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/charmbracelet/log"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/labstack/echo/v4"
@@ -24,6 +26,7 @@ type Server struct {
 	db       *db.Service
 	producer *mq.Producer
 	consumer *mq.Consumer
+	r2Client *s3.Client
 }
 
 const RabbitBaseURL = "amqp://guest:guest@127.0.0.1:5672/"
@@ -48,10 +51,11 @@ func (s *Server) Init() error {
 
 	/*----echo-config----*/
 	var err error
+	s.r2Client = storage.InitStorage()
 	s.producer, err = mq.NewProducer("add", RabbitBaseURL)
-	s.consumer = mq.NewConsumer("add", RabbitBaseURL)
+	s.consumer = mq.NewConsumer("add", RabbitBaseURL, s.r2Client)
 
-	s.RegisterRoutes(s.producer)
+	s.RegisterRoutes()
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
 		response := errz.FormatError(err)
 		if !c.Response().Committed {

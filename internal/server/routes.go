@@ -1,7 +1,6 @@
 package server
 
 import (
-	"StreamRoom/internal/domain/mq"
 	"StreamRoom/internal/handler"
 	"StreamRoom/internal/service"
 	storage "StreamRoom/storage"
@@ -12,7 +11,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func (s *Server) RegisterRoutes(producer *mq.Producer) {
+func (s *Server) RegisterRoutes() {
 
 	/*--------prefix---------*/
 	apiGroup := s.e.Group("/api")
@@ -22,15 +21,14 @@ func (s *Server) RegisterRoutes(producer *mq.Producer) {
 		SigningKey: []byte(os.Getenv("JWT_SECRET_KEY")),
 	}))
 	//apiV1Group.Use(handlers.AuthMiddleware)
-	r2Client := storage.InitStorage()
-	storageService := storage.NewR2MediaService(r2Client, os.Getenv("BUCKET_NAME"))
+	storageService := storage.NewR2MediaService(s.r2Client, os.Getenv("BUCKET_NAME"))
 
 	/*-------------public group---------------------*/
 	publicGroup := s.e.Group("/public")
 
 	/*-------------Service Layer------------*/
 	videoService := service.NewVideoService(storageService)
-	roomService := service.NewRoomService(videoService, producer)
+	roomService := service.NewRoomService(storageService, s.producer)
 
 	/*-------------Handler Layer-------------*/
 	//##-with auth-##

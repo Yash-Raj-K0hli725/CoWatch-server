@@ -2,6 +2,7 @@ package mq
 
 import (
 	"StreamRoom/enums"
+	"StreamRoom/internal/service/cogine"
 	"StreamRoom/internal/views"
 	"context"
 	"encoding/json"
@@ -16,12 +17,14 @@ import (
 
 type Worker struct {
 	id     int
+	cogine *cogine.Cogine
 	logger *log.Logger
 }
 
-func NewWorker(id int) *Worker {
+func NewWorker(id int, co *cogine.Cogine) *Worker {
 	return &Worker{
 		id:     id,
+		cogine: co,
 		logger: log.New(os.Stdout, fmt.Sprintf("[Worker-%d] ", id), log.LstdFlags|log.Lmsgprefix),
 	}
 }
@@ -63,7 +66,7 @@ func (w *Worker) ProcessDelivery(ctx context.Context, d amqp.Delivery) (err erro
 	jobCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	err = w.startCompilation(jobCtx, task.Obzect)
+	err = w.startJob(jobCtx, task.Obzect)
 	if err != nil {
 		currentStage = enums.TaskFailed
 		w.logger.Printf("Stage: %s | Execution error: %v", currentStage, err)
@@ -92,6 +95,6 @@ func (w *Worker) ProcessDelivery(ctx context.Context, d amqp.Delivery) (err erro
 	return err
 }
 
-func (w *Worker) startCompilation(ctx context.Context, obzect string) error {
-	return nil
+func (w *Worker) startJob(ctx context.Context, obzect string) error {
+	return w.cogine.StartCompression(ctx, obzect)
 }
