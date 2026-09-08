@@ -1,6 +1,7 @@
 package cogine
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -32,12 +33,11 @@ func (c *Cogine) StartCompression(ctx context.Context, OKey string) error {
 	}
 	defer os.RemoveAll(tmpDir)
 	in := filepath.Join(tmpDir, "input.mp4")
-	out := filepath.Join(tmpDir, "output.mp4")
 	log.Printf("starting to download remote upload :: %s", OKey)
 	if err = c.downloadFromR2(ctx, OKey, in); err != nil {
 		return fmt.Errorf("R2 failed to download %s :: %w", OKey, err)
 	}
-	c.transcodeToHLS(in, out)
+	c.transcodeToHLS(in, tmpDir)
 	log.Printf("ready to upload the video...")
 	//c.uploadToR2(ctx, out,)
 	return nil
@@ -64,43 +64,43 @@ func (c *Cogine) transcodeToHLS(inputPath, outputDir string) {
 		"-i", inputPath,
 		"-hide_banner", "-y",
 
-		// Filtergraph: Decode once, split into two streams, scale each
+		// Filtergraph: Decode once, split into two video streams, scale each
 		"-filter_complex", "[0:v]split=2[v1][v2]; [v1]scale=w=1280:h=720[v720]; [v2]scale=w=854:h=480[v480]",
 
 		// ----------------------------------------------------
-		// 720p Variant
+		// 720p Output
 		// ----------------------------------------------------
 		"-map", "[v720]",
-		"-map", "0:a?", // Maps audio if present in source
-		"-c:v:0", "libx264",
-		"-profile:v:0", "main",
+		"-map", "0:a?", // Maps audio if present
+		"-c:v", "libx264",
+		"-profile:v", "main",
 		"-preset", "medium",
 		"-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
-		"-b:v:0", "2500k", "-maxrate:v:0", "2675k", "-bufsize:v:0", "3750k",
-		"-c:a:0", "aac", "-ar:a:0", "48000", "-b:a:0", "128k",
+		"-b:v", "2500k", "-maxrate", "2675k", "-bufsize", "3750k",
+		"-c:a", "aac", "-ar", "48000", "-b:a", "128k",
 		"-hls_time", "2",
 		"-hls_playlist_type", "vod",
 		"-hls_segment_filename", filepath.Join(outputDir, "720p_%03d.ts"),
 		filepath.Join(outputDir, "720p.m3u8"),
 
 		// ----------------------------------------------------
-		// 480p Variant
+		// 480p Output
 		// ----------------------------------------------------
 		"-map", "[v480]",
-		"-map", "0:a?",
-		"-c:v:1", "libx264",
-		"-profile:v:1", "main",
+		"-map", "0:a?", // Maps audio if present
+		"-c:v", "libx264",
+		"-profile:v", "main",
 		"-preset", "medium",
 		"-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
-		"-b:v:1", "1000k", "-maxrate:v:1", "1070k", "-bufsize:v:1", "1500k",
-		"-c:a:1", "aac", "-ar:a:1", "48000", "-b:a:1", "96k",
+		"-b:v", "1000k", "-maxrate", "1070k", "-bufsize", "1500k",
+		"-c:a", "aac", "-ar", "48000", "-b:a", "96k",
 		"-hls_time", "2",
 		"-hls_playlist_type", "vod",
 		"-hls_segment_filename", filepath.Join(outputDir, "480p_%03d.ts"),
 		filepath.Join(outputDir, "480p.m3u8"),
 
 		// ----------------------------------------------------
-		// Real-time Progress Pipe Configuration
+		// Real-time Progress
 		// ----------------------------------------------------
 		"-progress", "pipe:1",
 		"-nostats",
@@ -112,6 +112,8 @@ func (c *Cogine) transcodeToHLS(inputPath, outputDir string) {
 		fmt.Printf("🔴 Failed to attach stdout pipe for %s: %v\n", inputPath, err)
 		return
 	}
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
 		fmt.Printf("🔴 CPU Transcoding error starting %s: %v\n", inputPath, err)
@@ -119,12 +121,18 @@ func (c *Cogine) transcodeToHLS(inputPath, outputDir string) {
 	}
 
 	// Active progress parser
-	c.parseFFmpegProgress(stdout, duration, outputDir)
+	var done = make(chan struct{})
+	go func() {
+		c.parseFFmpegProgress(stdout, duration, outputDir)
+		close(done)
+	}()
 
 	if err := cmd.Wait(); err != nil {
 		fmt.Printf("🔴 CPU Transcoding error processing %s: %v\n", inputPath, err)
+		fmt.Printf("📋 FFmpeg Stderr Output Log:\n%s\n", stderrBuf.String())
 		return
 	}
+	<-done
 
 	// Create master HLS playlist
 	c.createMasterPlaylist(outputDir)
