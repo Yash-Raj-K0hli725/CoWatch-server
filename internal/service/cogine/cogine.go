@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
@@ -31,7 +32,7 @@ func (c *Cogine) StartCompression(ctx context.Context, OKey string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create temp file:: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	//defer os.RemoveAll(tmpDir)
 	in := filepath.Join(tmpDir, "input.mp4")
 	log.Printf("starting to download remote upload :: %s", OKey)
 	if err = c.downloadFromR2(ctx, OKey, in); err != nil {
@@ -64,14 +65,30 @@ func (c *Cogine) transcodeToHLS(inputPath, outputDir string) {
 		"-i", inputPath,
 		"-hide_banner", "-y",
 
-		// Filtergraph: Decode once, split into two video streams, scale each
-		"-filter_complex", "[0:v]split=2[v1][v2]; [v1]scale=w=1280:h=720[v720]; [v2]scale=w=854:h=480[v480]",
+		// Filtergraph: split into 3 streams
+		"-filter_complex", "[0:v]split=3[v_orig][v1][v2]; [v1]scale=w=1280:h=720[v720]; [v2]scale=w=854:h=480[v480]",
+
+		// ----------------------------------------------------
+		// Original Quality Output (e.g., 1080p / Source Res)
+		// ----------------------------------------------------
+		"-map", "[v_orig]",
+		"-map", "0:a?",
+		"-c:v", "libx264",
+		"-profile:v", "high",
+		"-preset", "medium",
+		"-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
+		"-b:v", "5000k", "-maxrate", "5350k", "-bufsize", "7500k",
+		"-c:a", "aac", "-ar", "48000", "-b:a", "192k",
+		"-hls_time", "2",
+		"-hls_playlist_type", "vod",
+		"-hls_flags", "single_file",
+		filepath.Join(outputDir, "original.m3u8"),
 
 		// ----------------------------------------------------
 		// 720p Output
 		// ----------------------------------------------------
 		"-map", "[v720]",
-		"-map", "0:a?", // Maps audio if present
+		"-map", "0:a?",
 		"-c:v", "libx264",
 		"-profile:v", "main",
 		"-preset", "medium",
@@ -80,14 +97,14 @@ func (c *Cogine) transcodeToHLS(inputPath, outputDir string) {
 		"-c:a", "aac", "-ar", "48000", "-b:a", "128k",
 		"-hls_time", "2",
 		"-hls_playlist_type", "vod",
-		"-hls_segment_filename", filepath.Join(outputDir, "720p_%03d.ts"),
+		"-hls_flags", "single_file",
 		filepath.Join(outputDir, "720p.m3u8"),
 
 		// ----------------------------------------------------
 		// 480p Output
 		// ----------------------------------------------------
 		"-map", "[v480]",
-		"-map", "0:a?", // Maps audio if present
+		"-map", "0:a?",
 		"-c:v", "libx264",
 		"-profile:v", "main",
 		"-preset", "medium",
@@ -96,12 +113,9 @@ func (c *Cogine) transcodeToHLS(inputPath, outputDir string) {
 		"-c:a", "aac", "-ar", "48000", "-b:a", "96k",
 		"-hls_time", "2",
 		"-hls_playlist_type", "vod",
-		"-hls_segment_filename", filepath.Join(outputDir, "480p_%03d.ts"),
+		"-hls_flags", "single_file",
 		filepath.Join(outputDir, "480p.m3u8"),
 
-		// ----------------------------------------------------
-		// Real-time Progress
-		// ----------------------------------------------------
 		"-progress", "pipe:1",
 		"-nostats",
 	}
@@ -135,20 +149,61 @@ func (c *Cogine) transcodeToHLS(inputPath, outputDir string) {
 	<-done
 
 	// Create master HLS playlist
-	c.createMasterPlaylist(outputDir)
+	width, height, err := c.getVideoDimensions(inputPath)
+	if err != nil {
+		fmt.Printf("🔴 CPU Transcoding error while getting dimensions %s: %v\n", inputPath, err)
+		return
+	}
+	c.createMasterPlaylist(outputDir, width, height)
 	fmt.Printf("✅ CPU Transcoding successfully completed for directory: %s\n", outputDir)
 }
 
+// getVideoDimensions extracts width and height using ffprobe
+func (c *Cogine) getVideoDimensions(inputPath string) (int, int, error) {
+	ffprobeExe := c.FFProbe
+	if ffprobeExe == "" {
+		ffprobeExe = "ffprobe"
+	}
+	
+	args := []string{
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=width,height",
+		"-of", "csv=s=x:p=0",
+		inputPath,
+	}
+
+	cmd := exec.Command(ffprobeExe, args...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	if err := cmd.Run(); err != nil {
+		return 0, 0, fmt.Errorf("ffprobe failed: %w", err)
+	}
+
+	var width, height int
+	_, err := fmt.Sscanf(strings.TrimSpace(out.String()), "%dx%d", &width, &height)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to parse dimensions: %w", err)
+	}
+
+	return width, height, nil
+}
+
 // createMasterPlaylist outputs master.m3u8 linking variant playlists
-func (c *Cogine) createMasterPlaylist(outputDir string) {
-	masterContent := `#EXTM3U
-#EXT-X-VERSION:3
-#EXT-X-STREAM-INF:BANDWIDTH=2800000,RESOLUTION=1280x720
+func (c *Cogine) createMasterPlaylist(outputDir string, origWidth, origHeight int) {
+	masterContent := fmt.Sprintf(`#EXTM3U
+#EXT-X-VERSION:4
+#EXT-X-STREAM-INF:BANDWIDTH=5500000,RESOLUTION=%dx%d,NAME="Original"
+original.m3u8
+
+#EXT-X-STREAM-INF:BANDWIDTH=2800000,RESOLUTION=1280x720,NAME="720p"
 720p.m3u8
 
-#EXT-X-STREAM-INF:BANDWIDTH=1100000,RESOLUTION=854x480
+#EXT-X-STREAM-INF:BANDWIDTH=1100000,RESOLUTION=854x480,NAME="480p"
 480p.m3u8
-`
+`, origWidth, origHeight)
+
 	masterPath := filepath.Join(outputDir, "master.m3u8")
 	_ = os.WriteFile(masterPath, []byte(masterContent), 0644)
 }
